@@ -1,128 +1,79 @@
 import streamlit as st
-from PIL import Image
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import ta
+from io import StringIO
 
-# تنظیمات صفحه
-st.set_page_config(page_title="Trix Trade | تحلیل چارت", page_icon="📈", layout="centered")
+st.set_page_config(page_title="Trix Trade", layout="wide")
 
-# استایل‌ها
-st.markdown("""
-    <style>
-    body {
-        background-color: #111;
-        color: #fff;
-        font-family: 'Arial', sans-serif;
-    }
-    .main {
-        background-color: #1a1a1a;
-        color: #fff;
-        padding: 20px;
-        border-radius: 10px;
-    }
-    .stButton>button {
-        background-color: #e50914;
-        color: white;
-        border-radius: 8px;
-        padding: 10px 20px;
-        font-weight: bold;
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.title("📊 تحلیل تکنیکال خودکار - Trix Trade")
+st.markdown("آپلود فایل CSV چارت (دارای ستون‌های `Date`, `Open`, `High`, `Low`, `Close`, `Volume`)")
 
-# صفحه ورود
-def login():
-    st.sidebar.header("🔐 ورود")
-    username = st.sidebar.text_input("نام کاربری")
-    password = st.sidebar.text_input("رمز عبور", type="password")
-    login_btn = st.sidebar.button("ورود")
-    if login_btn:
-        if username == "shanixir" and password == "shayan1383":
-            st.session_state["auth"] = True
-        else:
-            st.sidebar.error("نام کاربری یا رمز اشتباه است.")
-
-if "auth" not in st.session_state:
-    st.session_state["auth"] = False
-
-if not st.session_state["auth"]:
-    login()
-    st.stop()
-
-# صفحه اصلی
-st.title("📊 Trix Trade")
-st.markdown("""
-    <h4 style='color:#e50914;'>آپلود چارت برای تحلیل</h4>
-    <p>لطفاً تصویر چارت خود را بارگذاری کنید تا تحلیل اولیه و پیش‌بینی انجام شود.</p>
-""", unsafe_allow_html=True)
-
-uploaded_file = st.file_uploader("آپلود تصویر چارت", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("فایل چارت را آپلود کنید", type=["csv"])
 
 if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="چارت شما", use_column_width=True)
+    df = pd.read_csv(uploaded_file)
+    
+    # پاکسازی و آماده‌سازی
+    df.columns = df.columns.str.strip()
+    df['Date'] = pd.to_datetime(df['Date'])
+    df.set_index('Date', inplace=True)
+    
+    st.subheader("📈 نمودار قیمت")
+    st.line_chart(df['Close'])
 
-    with st.spinner("در حال تحلیل تصویر..."):
-        st.success("✅ تحلیل اولیه انجام شد")
-        st.markdown("""
-        **پیش‌بینی حرکت قیمت:** 🔻 احتمال ریزش از سطح فعلی وجود دارد.
+    # محاسبه اندیکاتورها
+    df['rsi'] = ta.momentum.RSIIndicator(df['Close']).rsi()
+    df['macd'] = ta.trend.MACD(df['Close']).macd_diff()
+    df['ma50'] = df['Close'].rolling(window=50).mean()
+    df['ma200'] = df['Close'].rolling(window=200).mean()
 
-        **منطقه حساس:** بین 1.2450 تا 1.2480  
-        **توصیه:** در صورت شکست این ناحیه، روند نزولی تایید می‌شود.
-        """)
+    st.subheader("📉 اندیکاتورها")
+    fig, ax = plt.subplots()
+    df[['Close', 'ma50', 'ma200']].plot(ax=ax)
+    plt.title("Moving Averages")
+    st.pyplot(fig)
+
+    st.subheader("📌 تحلیل اولیه")
+    last_rsi = df['rsi'].iloc[-1]
+    last_macd = df['macd'].iloc[-1]
+    last_price = df['Close'].iloc[-1]
+    ma50 = df['ma50'].iloc[-1]
+    ma200 = df['ma200'].iloc[-1]
+
+    signal = "🔍 تحلیل اولیه: "
+
+    # تصمیم‌گیری ساده بر اساس وضعیت اندیکاتورها
+    if last_rsi < 30:
+        signal += "اشباع فروش (احتمال برگشت قیمت). "
+    elif last_rsi > 70:
+        signal += "اشباع خرید (احتمال اصلاح قیمت). "
+    else:
+        signal += "RSI نرمال. "
+
+    if last_macd > 0:
+        signal += "قدرت صعودی در MACD. "
+    else:
+        signal += "فشار نزولی در MACD. "
+
+    if last_price > ma50 and ma50 > ma200:
+        signal += "روند صعودی تایید شده."
+    elif last_price < ma50 and ma50 < ma200:
+        signal += "روند نزولی تایید شده."
+    else:
+        signal += "بازار در حالت رِنج یا تغییر روند است."
+
+    st.success(signal)
+
+    # سیگنال‌های احتمالی
+    st.subheader("🎯 نقاط احتمالی ورود و خروج")
+    if last_rsi < 35 and last_macd > 0:
+        st.info(f"✅ نقطه ورود احتمالی: {last_price:.2f}")
+        st.warning(f"🛑 حد ضرر: {last_price * 0.97:.2f}")
+        st.success(f"🎯 تارگت: {last_price * 1.05:.2f}")
+    else:
+        st.info("در حال حاضر شرایط مناسب برای ورود دیده نمی‌شود.")
+
 else:
-    st.info("لطفاً ابتدا تصویر چارت را بارگذاری کنید.")
-
-
-import streamlit as st
-from PIL import Image
-import numpy as np
-import io
-import cv2
-
-# --- UI Setup ---
-st.set_page_config(page_title="Trix Trade Analyzer", layout="wide")
-
-# --- Custom Styling ---
-st.markdown("""
-    <style>
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
-    </style>
-""", unsafe_allow_html=True)
-
-# --- Logo and Title ---
-st.markdown("<h2 style='color:red;'>به سایت تحلیل Trix_Trade خوش آمدید</h2>", unsafe_allow_html=True)
-
-# --- Image Upload ---
-st.subheader("📤 تصویر چارت خود را آپلود کنید:")
-uploaded_file = st.file_uploader("فرمت قابل قبول: PNG, JPG", type=["png", "jpg", "jpeg"])
-
-# --- Analysis Placeholder ---
-def analyze_image(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
-    lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=80, minLineLength=50, maxLineGap=10)
-
-    trend = "نامشخص"
-    if lines is not None:
-        avg_slope = np.mean([(y2 - y1)/(x2 - x1 + 0.01) for x1, y1, x2, y2 in lines[:, 0]])
-        if avg_slope > 0.2:
-            trend = "📈 روند کلی صعودی است"
-        elif avg_slope < -0.2:
-            trend = "📉 روند کلی نزولی است"
-        else:
-            trend = "🔁 روند خنثی یا اصلاحی است"
-    return trend
-
-# --- Main App ---
-if uploaded_file:
-    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    image = cv2.imdecode(file_bytes, 1)
-    st.image(image, caption="چارت آپلود شده", use_column_width=True)
-
-    st.subheader("🔎 تحلیل اولیه:")
-    result = analyze_image(image)
-    st.success(result)
-
-    st.info("⚠️ تحلیل سطحی است. نسخه حرفه‌ای با ابزارهای بیشتر در حال توسعه است.")
-else:
-    st.warning("لطفاً یک تصویر چارت آپلود کنید.")
+    st.warning("برای شروع تحلیل، لطفاً یک فایل چارت CSV آپلود کنید.")
