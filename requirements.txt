@@ -1,2 +1,5 @@
 streamlit
-Pillow
+pandas
+numpy
+matplotlib
+ta
